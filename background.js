@@ -26,122 +26,54 @@ async function getBullXTokensFromTab(tab) {
         const result = await chrome.scripting.executeScript({
             target: { tabId: tab.id },
             func: () => {
-                function tryMethod(methodName, fn) {
-                    try {
-                        const result = fn();
-                        console.log(`Method ${methodName}:`, result ? 'Success' : 'Failed');
-                        return result;
-                    } catch (e) {
-                        console.log(`Method ${methodName} failed:`, e);
-                        return null;
-                    }
-                }
+                try {
+                    // Log all storage for debugging
+                    console.log('LocalStorage keys:', Object.keys(localStorage));
+                    
+                    // Direct approach - get _authToken
+                    const authToken = localStorage.getItem('_authToken');
+                    console.log('Found authToken:', !!authToken);
 
-                // Collection of different methods to get the token
-                const methods = {
-                    // Method 1: Direct localStorage
-                    directLocalStorage: () => localStorage.getItem('_authToken'),
-
-                    // Method 2: Window localStorage
-                    windowLocalStorage: () => window.localStorage.getItem('_authToken'),
-
-                    // Method 3: Parse LoginInfo
-                    loginInfo: () => {
-                        const loginInfo = localStorage.getItem('LoginInfo');
-                        if (loginInfo) {
-                            const parsed = JSON.parse(loginInfo);
-                            return parsed.token || parsed.authToken;
-                        }
-                        return null;
-                    },
-
-                    // Method 4: Check session storage
-                    sessionStorage: () => sessionStorage.getItem('_authToken'),
-
-                    // Method 5: Check for auth in cookies
-                    cookies: () => {
-                        const match = document.cookie.match(/authToken=([^;]+)/);
-                        return match ? match[1] : null;
-                    },
-
-                    // Method 6: Check React props
-                    reactProps: () => {
-                        const nextElement = document.getElementById('__next');
-                        return nextElement?._reactRootContainer?._internalRoot?.current?.memoizedState?.element?.props?.pageProps?.token;
-                    },
-
-                    // Method 7: Check global window object
-                    globalWindow: () => window._authToken,
-
-                    // Method 8: Parse LoginInfo from different format
-                    alternateLoginInfo: () => {
-                        const info = localStorage.getItem('Logininfo');
-                        if (info) {
-                            try {
-                                const parsed = JSON.parse(info);
-                                return parsed.token || parsed.authToken;
-                            } catch (e) {
-                                return null;
-                            }
-                        }
-                        return null;
-                    },
-
-                    // Method 9: Check meta tags
-                    metaTags: () => document.querySelector('meta[name="auth-token"]')?.content,
-
-                    // Method 10: Try to find in any localStorage key containing 'token'
-                    searchLocalStorage: () => {
+                    if (!authToken) {
+                        // Try to find any token in localStorage
                         for (let i = 0; i < localStorage.length; i++) {
                             const key = localStorage.key(i);
-                            if (key.toLowerCase().includes('token')) {
-                                const value = localStorage.getItem(key);
-                                if (value && value.startsWith('ey')) { // JWT tokens start with 'ey'
-                                    return value;
-                                }
+                            const value = localStorage.getItem(key);
+                            if (value && value.startsWith('eyJ')) {
+                                console.log('Found token in key:', key);
+                                return {
+                                    sessionToken: value,
+                                    debug: { source: key }
+                                };
                             }
                         }
-                        return null;
+                        
+                        return {
+                            error: 'No auth token found. Please log into BullX.',
+                            debug: {
+                                localStorage: Object.keys(localStorage),
+                                cookies: document.cookie
+                            }
+                        };
                     }
-                };
 
-                // Try all methods and collect debug info
-                const debugInfo = {};
-                let token = null;
-
-                for (const [methodName, method] of Object.entries(methods)) {
-                    const result = tryMethod(methodName, method);
-                    debugInfo[methodName] = !!result;
-                    if (result && !token) {
-                        token = result;
-                        debugInfo.successMethod = methodName;
-                    }
-                }
-
-                // Additional debug info
-                debugInfo.localStorage = Object.keys(localStorage);
-                debugInfo.sessionStorage = Object.keys(sessionStorage);
-                debugInfo.cookies = document.cookie;
-                debugInfo.url = window.location.href;
-
-                if (token) {
                     return {
-                        sessionToken: token,
-                        debug: debugInfo
+                        sessionToken: authToken,
+                        debug: {
+                            source: '_authToken',
+                            hasToken: true
+                        }
                     };
+                } catch (e) {
+                    console.error('Error in token extraction:', e);
+                    return { error: e.message };
                 }
-
-                return {
-                    error: 'No auth token found. Please log into BullX.',
-                    debug: debugInfo
-                };
             }
         });
 
         console.log('Script execution result:', result);
 
         if (!result?.[0]?.result || result[0].result.error) {
-            console.error('Debug info:', result?.[0]?.result?.debug);
             throw new Error(result[0]?.result?.error || 'Failed to get token');
         }
 
@@ -156,7 +88,110 @@ async function getBullXTokensFromTab(tab) {
     }
 }
 
-// Handle messages from content script
+// Add this to your existing background.js
+async function makeProxiedRequest(url, options) {
+    try {
+        console.log('Making proxied request to:', url);
+        console.log('Request options:', JSON.stringify(options, null, 2));
+
+        // For order request (POST)
+        if (options.method === 'POST') {
+            const response = await fetch(url, {
+                method: 'POST',
+                headers: {
+                    'Authorization': options.headers.Authorization,
+                    'Accept': '*/*',
+                    'Content-Type': 'text/plain',
+                    'Origin': 'https://neo.bullx.io',
+                    'Referer': 'https://neo.bullx.io/',
+                    'Connection': 'keep-alive'
+                },
+                body: JSON.stringify({
+                    "name": "placeOrderV3",
+                    "data": {
+                        "chainId": 1399811149,
+                        "baseToken": {
+                            "address": options.body.data.baseToken.address,
+                            "decimals": 6,
+                            "protocol": "PUMP"
+                        },
+                        "quoteToken": {
+                            "address": "So11111111111111111111111111111111111111112",
+                            "decimals": 9
+                        },
+                        "orderType": "BUY_MARKET_ORDER_V1",
+                        "amounts": {
+                            "0": "500000000" // Fixed amount in SOL units (0.5 SOL)
+                        },
+                        "wallets": ["0"],
+                        "slippage": 30,
+                        "isMEVOnly": true,
+                        "priorityFee": 0.0001,
+                        "bribe": 0.0001,
+                        "burstable": false,
+                        "maxBurstChunks": 40,
+                        "language": "en"
+                    }
+                }),
+                credentials: 'include'
+            });
+
+            console.log('Order response status:', response.status);
+            const responseText = await response.text();
+            console.log('Order response:', responseText);
+
+            try {
+                const data = JSON.parse(responseText);
+                return { success: true, data };
+            } catch (e) {
+                return { success: true, data: responseText };
+            }
+        }
+
+        // For GET requests (token info)
+        const response = await fetch(url, {
+            method: 'GET',
+            headers: {
+                ...options.headers,
+                'Accept': '*/*',
+                'Content-Type': 'text/plain',
+                'Origin': 'https://neo.bullx.io',
+                'Referer': 'https://neo.bullx.io/'
+            },
+            credentials: 'include'
+        });
+
+        const data = await response.json();
+        return { success: true, data };
+
+    } catch (error) {
+        console.error('Proxy request failed:', error);
+        return { success: false, error: error.message };
+    }
+}
+
+async function refreshBullXToken(refreshToken) {
+    try {
+        const response = await fetch('https://securetoken.googleapis.com/v1/token?key=bsg-v2', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded'
+            },
+            body: `grant_type=refresh_token&refresh_token=${refreshToken}`
+        });
+
+        const data = await response.json();
+        if (data.access_token) {
+            return data.access_token;
+        }
+        throw new Error('Failed to refresh token');
+    } catch (error) {
+        console.error('Error refreshing token:', error);
+        throw error;
+    }
+}
+
+// Update your message listener
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     if (request.type === 'GET_BULLX_TOKENS') {
         (async () => {
@@ -177,6 +212,13 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         })();
         
         return true; // Keep the message channel open
+    }
+    else if (request.type === 'PROXY_REQUEST') {
+        (async () => {
+            const result = await makeProxiedRequest(request.url, request.options);
+            sendResponse(result);
+        })();
+        return true;
     }
 });
 

@@ -10,7 +10,7 @@
     "tabs",
     "webNavigation",
     "windows",
-    "scripting"
+    "webRequest"
   ],
   "host_permissions": [
     "https://twitter.com/*",
@@ -19,8 +19,7 @@
     "*://*.bullx.io/*",
     "https://neo.bullx.io/*",
     "https://api-neo.bullx.io/*",
-    "https://www.neo.bullx.io/*",
-    "<all_urls>"
+    "https://www.neo.bullx.io/*"
   ],
   "action": {
     "default_popup": "popup.html"
@@ -38,5 +37,8 @@
       "js": ["content.js"],
       "run_at": "document_end"
     }
-  ]
+  ],
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self'; connect-src 'self' https://api-neo.bullx.io/"
+  }
 } 

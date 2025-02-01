@@ -99,71 +99,73 @@ function createButtons(contractAddress) {
         try {
             const tokens = await getBullXTokens();
             
-            // First, get the token info
-            const tokenInfoResponse = await fetch(`https://api-neo.bullx.io/secure/api/token/${contractAddress}`, {
-                headers: {
-                    'Authorization': `Bearer ${tokens.sessionToken}`,
-                    'x-cs-token': tokens.csToken
-                }
+            // Get token info through proxy
+            const tokenInfoResult = await new Promise((resolve) => {
+                chrome.runtime.sendMessage({
+                    type: 'PROXY_REQUEST',
+                    url: `https://api-neo.bullx.io/secure/api/token/${contractAddress}`,
+                    options: {
+                        method: 'GET',
+                        headers: {
+                            'Authorization': `Bearer ${tokens.sessionToken}`
+                        }
+                    }
+                }, resolve);
             });
-            
-            const tokenInfo = await tokenInfoResponse.json();
+
+            if (!tokenInfoResult.success) {
+                throw new Error(tokenInfoResult.error);
+            }
+
+            const tokenInfo = tokenInfoResult.data;
             log('Token info:', tokenInfo);
 
-            // Calculate amount in SOL units for $0.50
+            // Calculate amount
             const priceInUSD = parseFloat(tokenInfo.priceUSD);
             const amountInTokens = 0.50 / priceInUSD;
-            const amountInSolUnits = Math.floor(amountInTokens * Math.pow(10, 9)); // Convert to SOL units
+            const amountInSolUnits = Math.floor(amountInTokens * Math.pow(10, 9));
 
-            const response = await fetch('https://api-neo.bullx.io/secure/api/order', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'text/plain',
-                    'Origin': 'https://neo.bullx.io',
-                    'Referer': 'https://neo.bullx.io/',
-                    'Authorization': `Bearer ${tokens.sessionToken}`
-                },
-                body: JSON.stringify({
-                    "name": "placeOrderV3",
-                    "data": {
-                        "chainId": 1399811149,
-                        "baseToken": {
-                            "address": contractAddress,
-                            "name": tokenInfo.name,
-                            "symbol": tokenInfo.symbol,
-                            "price": tokenInfo.price,
-                            "priceUSD": tokenInfo.priceUSD,
-                            "decimals": 6,
-                            "protocol": "PUMP"
+            // Place order through proxy
+            const orderResult = await new Promise((resolve) => {
+                chrome.runtime.sendMessage({
+                    type: 'PROXY_REQUEST',
+                    url: 'https://api-neo.bullx.io/secure/api/order',
+                    options: {
+                        method: 'POST',
+                        headers: {
+                            'Authorization': `Bearer ${tokens.sessionToken}`
                         },
-                        "quoteToken": {
-                            "address": "So11111111111111111111111111111111111111112",
-                            "decimals": 9
-                        },
-                        "orderType": "BUY_MARKET_ORDER_V1",
-                        "amounts": {
-                            [tokenInfo.wallets[0]]: amountInSolUnits.toString()
-                        },
-                        "wallets": [tokenInfo.wallets[0]],
-                        "direction": null,
-                        "referrer": "",
-                        "sellStrategyId": "e18378e6-4d2d-4779-a091-41c13959d187",
-                        "priorityFee": 0.0001,
-                        "bribe": 0.0001,
-                        "slippage": 30,
-                        "isMEVOnly": true,
-                        "burstable": false,
-                        "maxBurstChunks": 40,
-                        "language": "en"
+                        body: {
+                            "name": "placeOrderV3",
+                            "data": {
+                                "chainId": 1399811149,
+                                "baseToken": {
+                                    "address": contractAddress,
+                                    "decimals": 6,
+                                    "protocol": "PUMP"
+                                },
+                                "quoteToken": {
+                                    "address": "So11111111111111111111111111111111111111112",
+                                    "decimals": 9
+                                },
+                                "orderType": "BUY_MARKET_ORDER_V1",
+                                "slippage": 30,
+                                "isMEVOnly": true,
+                                "priorityFee": 0.0001,
+                                "bribe": 0.0001,
+                                "burstable": false,
+                                "maxBurstChunks": 40,
+                                "language": "en"
+                            }
+                        }
                     }
-                })
+                }, resolve);
             });
 
-            if (!response.ok) {
-                const errorText = await response.text();
-                throw new Error(`HTTP error! status: ${response.status}, message: ${errorText}`);
+            if (!orderResult.success) {
+                throw new Error(orderResult.error);
             }
-            
+
             buyButton.innerHTML = '✅ Order placed!';
             setTimeout(() => {
                 buyButton.innerHTML = '🚀 Quick Buy $0.5';
