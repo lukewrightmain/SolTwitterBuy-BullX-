@@ -56,11 +56,10 @@ function createButtons(contractAddress) {
         align-items: center;
     `;
 
-    // SOL Amount Input
+    // SOL Amount Input - now reads default from storage
     const amountInput = document.createElement('input');
     amountInput.type = 'number';
     amountInput.step = '0.1';
-    amountInput.value = '0.5';
     amountInput.min = '0.1';
     amountInput.style.cssText = `
         width: 70px;
@@ -72,6 +71,16 @@ function createButtons(contractAddress) {
         margin-right: 4px;
     `;
     
+    // Load saved settings
+    chrome.storage.local.get({
+        defaultSolAmount: 0.5,
+        priorityFee: 0.0001,
+        bribeFee: 0.0001,
+        slippage: 30
+    }, function(settings) {
+        amountInput.value = settings.defaultSolAmount;
+    });
+
     // Buy on BullX Button (previously View button)
     const buyButton = document.createElement('button');
     buyButton.className = 'buy-bullx-btn';
@@ -97,6 +106,13 @@ function createButtons(contractAddress) {
         e.stopPropagation();
         
         try {
+            // Get current settings
+            const settings = await chrome.storage.local.get({
+                priorityFee: 0.0001,
+                bribeFee: 0.0001,
+                slippage: 30
+            });
+
             const solAmount = parseFloat(amountInput.value);
             if (isNaN(solAmount) || solAmount <= 0) {
                 throw new Error('Please enter a valid SOL amount');
@@ -118,60 +134,45 @@ function createButtons(contractAddress) {
 
             const tokenInfo = tokenInfoResponse.data;
 
-            // Generate a wallet ID (this should be a simple number string)
-            const walletId = "0"; // Using default wallet ID
-
-            // Prepare order data matching the successful format
+            // Prepare order data with more accurate transaction details
             const orderData = {
                 method: 'POST',
                 url: 'https://api-neo.bullx.io/secure/api/order',
                 headers: {
                     'accept': 'application/json, text/plain, */*',
-                    'content-type': 'text/plain',
+                    'content-type': 'application/json',
                     'origin': 'https://neo.bullx.io',
                     'referer': 'https://neo.bullx.io/'
                 },
                 body: {
                     name: "placeOrderV3",
                     data: {
-                        chainId: 1399811149,
+                        chainId: 1399811149, // Solana mainnet chain ID
                         baseToken: {
                             address: contractAddress,
                             decimals: tokenInfo.decimals || 9,
                             protocol: "RAYDIUM",
                             price: tokenInfo.price,
-                            priceUSD: tokenInfo.priceUSD,
-                            name: tokenInfo.name,
-                            symbol: tokenInfo.symbol,
-                            image: tokenInfo.image,
-                            totalSupply: tokenInfo.totalSupply,
-                            liquidityPool: tokenInfo.liquidityPool
+                            priceUSD: tokenInfo.priceUSD
                         },
                         quoteToken: {
-                            address: "So11111111111111111111111111111111111111112",
+                            address: "So11111111111111111111111111111111111111112", // WSOL address
                             decimals: 9,
-                            price: tokenInfo.quoteToken?.price || "1",
-                            priceUSD: 230.7,
-                            name: "Wrapped SOL",
+                            price: "1",
                             symbol: "WSOL"
                         },
                         orderType: "BUY_MARKET_ORDER_V1",
                         amounts: {
-                            [walletId]: lamports
+                            "0": lamports // Using the converted lamports amount
                         },
-                        wallets: [walletId],
-                        entryEthPrice: tokenInfo.price,
-                        entryUsdPrice: tokenInfo.priceUSD,
+                        wallets: ["0"],
                         direction: "BUY",
-                        referrer: "",
-                        sellStrategyId: null,
-                        priorityFee: 0.0001,
-                        bribe: 0.0001,
-                        slippage: 30,
-                        isMEVOnly: false, // Changed to false to match normal transaction flow
+                        slippage: settings.slippage,
+                        priorityFee: settings.priorityFee,
+                        bribe: settings.bribeFee,
+                        isMEVOnly: false,
                         burstable: false,
-                        maxBurstChunks: 40,
-                        language: "en"
+                        maxBurstChunks: 40
                     }
                 }
             };
@@ -182,37 +183,32 @@ function createButtons(contractAddress) {
                 ...orderData
             });
 
-            console.log('Order response:', orderResponse);
+            if (orderResponse.success && orderResponse.data?.orderId) {
+                // Poll for transaction status with exponential backoff
+                let attempts = 0;
+                const maxAttempts = 15;
+                const pollStatus = async () => {
+                    if (attempts >= maxAttempts) {
+                        alert('Transaction build timed out. Please check BullX for status.');
+                        return;
+                    }
 
-            if (orderResponse.success && !orderResponse.data?.statusCode) {
-                // After successful order placement, we need to wait for transaction build
-                const orderId = orderResponse.data?.orderId;
-                if (orderId) {
-                    // Poll for transaction status
-                    let attempts = 0;
-                    const checkStatus = async () => {
-                        if (attempts > 10) return; // Give up after 10 attempts
-                        
-                        const statusResponse = await chrome.runtime.sendMessage({
-                            type: 'PROXY_REQUEST',
-                            url: `https://api-neo.bullx.io/secure/api/order/${orderId}`,
-                            method: 'GET'
-                        });
-                        
-                        if (statusResponse.success && statusResponse.data?.transaction) {
-                            alert(`Order placed successfully for ${solAmount} SOL!`);
-                        } else if (attempts < 10) {
-                            attempts++;
-                            setTimeout(checkStatus, 1000); // Check again in 1 second
-                        } else {
-                            alert('Transaction build timed out. Please check BullX for status.');
-                        }
-                    };
-                    
-                    checkStatus();
-                } else {
-                    alert(`Order submitted. Please check BullX for status.`);
-                }
+                    const statusResponse = await chrome.runtime.sendMessage({
+                        type: 'PROXY_REQUEST',
+                        url: `https://api-neo.bullx.io/secure/api/order/${orderResponse.data.orderId}`,
+                        method: 'GET'
+                    });
+
+                    if (statusResponse.success && statusResponse.data?.transaction) {
+                        alert(`Order placed successfully for ${solAmount} SOL!`);
+                    } else {
+                        attempts++;
+                        // Exponential backoff: 1s, 2s, 4s, 8s, etc.
+                        setTimeout(pollStatus, Math.min(1000 * Math.pow(2, attempts), 10000));
+                    }
+                };
+
+                pollStatus();
             } else {
                 const errorMsg = orderResponse.data?.message || orderResponse.error || 'Unknown error';
                 alert('Failed to place order: ' + errorMsg);
