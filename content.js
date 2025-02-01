@@ -51,56 +51,113 @@ function createButtons(contractAddress) {
     const container = document.createElement('div');
     container.style.cssText = `
         display: flex;
-        gap: 8px;
+        gap: 12px;
         margin: 12px 0;
         align-items: center;
     `;
 
-    // SOL Amount Input - now reads default from storage
-    const amountInput = document.createElement('input');
-    amountInput.type = 'number';
-    amountInput.step = '0.1';
-    amountInput.min = '0.1';
-    amountInput.style.cssText = `
-        width: 70px;
-        padding: 6px;
-        border: 1px solid rgb(83, 100, 113);
-        border-radius: 4px;
-        background: transparent;
-        color: inherit;
-        margin-right: 4px;
-    `;
+    // Buy on BullX Button
+    const buyButton = document.createElement('button');
+    buyButton.className = 'bullx-btn buy-btn';
     
-    // Load saved settings
+    // Get the default amount from storage to display on the button
     chrome.storage.local.get({
         defaultSolAmount: 0.5,
-        priorityFee: 0.0001,
-        bribeFee: 0.0001,
-        slippage: 30
     }, function(settings) {
-        amountInput.value = settings.defaultSolAmount;
+        buyButton.innerHTML = `🚀 Buy ${settings.defaultSolAmount} SOL`;
     });
 
-    // Buy on BullX Button (previously View button)
-    const buyButton = document.createElement('button');
-    buyButton.className = 'buy-bullx-btn';
-    buyButton.innerHTML = '🚀 Buy on BullX';
-    buyButton.style.cssText = `
-        background-color: rgb(83, 100, 113);
-        color: rgb(255, 255, 255);
-        border: none;
-        border-radius: 9999px;
-        padding: 6px 16px;
-        cursor: pointer;
-        font-size: 15px;
-        font-weight: 500;
-        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-        transition: background-color 0.2s;
+    // View on BullX Button
+    const viewButton = document.createElement('button');
+    viewButton.className = 'bullx-btn view-btn';
+    viewButton.innerHTML = '👀 View on BullX';
+
+    // Shared button styles
+    const buttonStyles = `
+        .bullx-btn {
+            background: linear-gradient(135deg, #1da1f2 0%, #1a91da 100%);
+            color: white;
+            border: none;
+            border-radius: 9999px;
+            padding: 8px 16px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 600;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            transition: all 0.3s ease;
+            box-shadow: 0 2px 5px rgba(29, 161, 242, 0.2);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .bullx-btn:before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(
+                90deg,
+                transparent,
+                rgba(255, 255, 255, 0.2),
+                transparent
+            );
+            transition: 0.5s;
+        }
+
+        .bullx-btn:hover:before {
+            left: 100%;
+        }
+
+        .bullx-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 10px rgba(29, 161, 242, 0.3);
+            background: linear-gradient(135deg, #1a91da 0%, #1577b5 100%);
+        }
+
+        .bullx-btn:active {
+            transform: translateY(0);
+            box-shadow: 0 2px 5px rgba(29, 161, 242, 0.2);
+        }
+
+        .buy-btn {
+            background: linear-gradient(135deg, #00c853 0%, #009624 100%);
+            box-shadow: 0 2px 5px rgba(0, 200, 83, 0.2);
+        }
+
+        .buy-btn:hover {
+            background: linear-gradient(135deg, #009624 0%, #007722 100%);
+            box-shadow: 0 4px 10px rgba(0, 200, 83, 0.3);
+        }
+
+        .view-btn {
+            background: linear-gradient(135deg, #6200ea 0%, #4a148c 100%);
+            box-shadow: 0 2px 5px rgba(98, 0, 234, 0.2);
+        }
+
+        .view-btn:hover {
+            background: linear-gradient(135deg, #4a148c 0%, #311b92 100%);
+            box-shadow: 0 4px 10px rgba(98, 0, 234, 0.3);
+        }
     `;
-    
-    buyButton.onmouseover = () => buyButton.style.backgroundColor = 'rgb(66, 83, 96)';
-    buyButton.onmouseout = () => buyButton.style.backgroundColor = 'rgb(83, 100, 113)';
-    
+
+    // Add styles to document
+    if (!document.querySelector('#bullx-button-styles')) {
+        const styleSheet = document.createElement('style');
+        styleSheet.id = 'bullx-button-styles';
+        styleSheet.textContent = buttonStyles;
+        document.head.appendChild(styleSheet);
+    }
+
+    // View button click handler
+    viewButton.onclick = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        window.open(`https://neo.bullx.io/terminal?chainId=1399811149&address=${contractAddress}`, '_blank');
+    };
+
+    // Buy button click handler
     buyButton.onclick = async (e) => {
         e.preventDefault();
         e.stopPropagation();
@@ -108,12 +165,13 @@ function createButtons(contractAddress) {
         try {
             // Get current settings
             const settings = await chrome.storage.local.get({
+                defaultSolAmount: 0.5,
                 priorityFee: 0.0001,
                 bribeFee: 0.0001,
                 slippage: 30
             });
 
-            const solAmount = parseFloat(amountInput.value);
+            const solAmount = settings.defaultSolAmount;
             if (isNaN(solAmount) || solAmount <= 0) {
                 throw new Error('Please enter a valid SOL amount');
             }
@@ -121,10 +179,10 @@ function createButtons(contractAddress) {
             // Convert SOL to lamports (1 SOL = 1e9 lamports)
             const lamports = Math.floor(solAmount * 1e9).toString();
             
-            // First get token info
+            // First get token info with market data
             const tokenInfoResponse = await chrome.runtime.sendMessage({
                 type: 'PROXY_REQUEST',
-                url: `https://api-neo.bullx.io/secure/api/token/${contractAddress}`,
+                url: `https://api-neo.bullx.io/secure/api/token/${contractAddress}?includeMarketData=true`,
                 method: 'GET'
             });
 
@@ -134,7 +192,18 @@ function createButtons(contractAddress) {
 
             const tokenInfo = tokenInfoResponse.data;
 
-            // Prepare order data with more accurate transaction details
+            // Get liquidity pool info
+            const poolResponse = await chrome.runtime.sendMessage({
+                type: 'PROXY_REQUEST',
+                url: `https://api-neo.bullx.io/secure/api/pool/${tokenInfo.liquidityPool}`,
+                method: 'GET'
+            });
+
+            if (!poolResponse.success) {
+                throw new Error('Failed to get pool info');
+            }
+
+            // Prepare transaction data for BullX
             const orderData = {
                 method: 'POST',
                 url: 'https://api-neo.bullx.io/secure/api/order',
@@ -147,23 +216,29 @@ function createButtons(contractAddress) {
                 body: {
                     name: "placeOrderV3",
                     data: {
-                        chainId: 1399811149, // Solana mainnet chain ID
+                        chainId: 1399811149,
                         baseToken: {
                             address: contractAddress,
                             decimals: tokenInfo.decimals || 9,
                             protocol: "RAYDIUM",
                             price: tokenInfo.price,
-                            priceUSD: tokenInfo.priceUSD
+                            priceUSD: tokenInfo.priceUSD,
+                            name: tokenInfo.name,
+                            symbol: tokenInfo.symbol,
+                            image: tokenInfo.image,
+                            liquidityPool: tokenInfo.liquidityPool
                         },
                         quoteToken: {
-                            address: "So11111111111111111111111111111111111111112", // WSOL address
+                            address: "So11111111111111111111111111111111111111112",
                             decimals: 9,
                             price: "1",
+                            priceUSD: tokenInfo.quoteToken?.priceUSD || 0,
+                            name: "Wrapped SOL",
                             symbol: "WSOL"
                         },
                         orderType: "BUY_MARKET_ORDER_V1",
                         amounts: {
-                            "0": lamports // Using the converted lamports amount
+                            "0": lamports
                         },
                         wallets: ["0"],
                         direction: "BUY",
@@ -172,47 +247,75 @@ function createButtons(contractAddress) {
                         bribe: settings.bribeFee,
                         isMEVOnly: false,
                         burstable: false,
-                        maxBurstChunks: 40
+                        maxBurstChunks: 40,
+                        referrer: "",
+                        sellStrategyId: null,
+                        language: "en",
+                        pool: {
+                            ...poolResponse.data,
+                            protocol: "RAYDIUM"
+                        },
+                        transactionParams: {
+                            commitment: "confirmed",
+                            preflightCommitment: "processed",
+                            skipPreflight: true
+                        }
                     }
                 }
             };
 
-            // Send order request
+            // Send order request to create transaction
             const orderResponse = await chrome.runtime.sendMessage({
                 type: 'PROXY_REQUEST',
                 ...orderData
             });
 
-            if (orderResponse.success && orderResponse.data?.orderId) {
-                // Poll for transaction status with exponential backoff
-                let attempts = 0;
-                const maxAttempts = 15;
-                const pollStatus = async () => {
-                    if (attempts >= maxAttempts) {
-                        alert('Transaction build timed out. Please check BullX for status.');
-                        return;
-                    }
-
-                    const statusResponse = await chrome.runtime.sendMessage({
-                        type: 'PROXY_REQUEST',
-                        url: `https://api-neo.bullx.io/secure/api/order/${orderResponse.data.orderId}`,
-                        method: 'GET'
-                    });
-
-                    if (statusResponse.success && statusResponse.data?.transaction) {
-                        alert(`Order placed successfully for ${solAmount} SOL!`);
-                    } else {
-                        attempts++;
-                        // Exponential backoff: 1s, 2s, 4s, 8s, etc.
-                        setTimeout(pollStatus, Math.min(1000 * Math.pow(2, attempts), 10000));
-                    }
-                };
-
-                pollStatus();
-            } else {
-                const errorMsg = orderResponse.data?.message || orderResponse.error || 'Unknown error';
-                alert('Failed to place order: ' + errorMsg);
+            if (!orderResponse.success || !orderResponse.data?.orderId) {
+                throw new Error(orderResponse.data?.message || 'Failed to create order');
             }
+
+            // Poll for transaction status and signature
+            let attempts = 0;
+            const maxAttempts = 30; // Increased max attempts
+            const pollStatus = async () => {
+                if (attempts >= maxAttempts) {
+                    throw new Error('Transaction build timed out');
+                }
+
+                const statusResponse = await chrome.runtime.sendMessage({
+                    type: 'PROXY_REQUEST',
+                    url: `https://api-neo.bullx.io/secure/api/order/${orderResponse.data.orderId}/status`,
+                    method: 'GET'
+                });
+
+                if (statusResponse.success) {
+                    const status = statusResponse.data?.status;
+                    
+                    if (status === 'COMPLETED' && statusResponse.data?.transaction?.signature) {
+                        // Show success with transaction signature
+                        const signature = statusResponse.data.transaction.signature;
+                        alert(`Order successful! Transaction signature: ${signature}`);
+                        
+                        // Open transaction in Solana Explorer
+                        const explorerUrl = `https://solscan.io/tx/${signature}`;
+                        window.open(explorerUrl, '_blank');
+                        return;
+                    } else if (status === 'FAILED') {
+                        throw new Error(statusResponse.data?.error || 'Transaction failed');
+                    } else if (status === 'PENDING' || status === 'PROCESSING') {
+                        attempts++;
+                        // Exponential backoff with max of 3 seconds
+                        setTimeout(pollStatus, Math.min(1000 * Math.pow(1.5, attempts), 3000));
+                    } else {
+                        throw new Error(`Unknown status: ${status}`);
+                    }
+                } else {
+                    attempts++;
+                    setTimeout(pollStatus, Math.min(1000 * Math.pow(1.5, attempts), 3000));
+                }
+            };
+
+            await pollStatus();
 
         } catch (error) {
             console.error('Error placing order:', error);
@@ -220,8 +323,8 @@ function createButtons(contractAddress) {
         }
     };
 
-    container.appendChild(amountInput);
     container.appendChild(buyButton);
+    container.appendChild(viewButton);
     return container;
 }
 
