@@ -10,7 +10,8 @@
     "tabs",
     "webNavigation",
     "windows",
-    "webRequest"
+    "webRequest",
+    "cookies"
   ],
   "host_permissions": [
     "https://twitter.com/*",
@@ -36,6 +37,10 @@
       ],
       "js": ["content.js"],
       "run_at": "document_end"
+    },
+    {
+      "matches": ["*://*.bullx.io/*"],
+      "js": ["bullx-content.js"]
     }
   ],
   "content_security_policy": {

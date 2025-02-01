@@ -1,15 +1,17 @@
-// Listen for token requests from the Twitter tab
+// Listen for messages from the background script
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-    if (request.type === "GET_BULLX_TOKEN") {
-        // Get the Bearer token from localStorage or wherever BullX stores it
-        const token = localStorage.getItem('bullx-token') || '';
-        sendResponse({token});
-    }
-    else if (request.type === "GET_CS_TOKEN") {
-        // Get the CS token from cookies
-        const csToken = document.cookie.split('; ')
-            .find(row => row.startsWith('bullx-cs-token='))
-            ?.split('=')[1] || '';
-        sendResponse({token: csToken});
+    if (request.action === "getTokens") {
+        // Get all required tokens
+        const tokens = {
+            sessionToken: localStorage.getItem('_sessionToken'),
+            bullxToken: document.cookie.split('; ').find(row => row.startsWith('bullx-token'))?.split('=')[1],
+            bullxNonceId: document.cookie.split('; ').find(row => row.startsWith('bullx-nonce-id'))?.split('=')[1],
+            bullxVisitorId: document.cookie.split('; ').find(row => row.startsWith('bullx-visitor-id'))?.split('=')[1],
+            bullxCsToken: document.cookie.split('; ').find(row => row.startsWith('bullx-cs-token'))?.split('=')[1],
+            bullxSessionToken: document.cookie.split('; ').find(row => row.startsWith('bullx-session-token'))?.split('=')[1]
+        };
+        
+        console.log("Tokens found:", tokens);
+        sendResponse(tokens);
     }
 }); 
