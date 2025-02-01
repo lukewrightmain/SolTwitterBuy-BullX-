@@ -46,43 +46,74 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 // Regular expression to match Solana contract addresses
 const solanaAddressRegex = /(?:\/spot\/)?([1-9A-HJ-NP-Za-km-z]{32,44})/;
 
-// Function to create buy button
-function createBuyButton(contractAddress) {
-    const button = document.createElement('button');
-    button.className = 'quick-buy-btn';
-    button.innerHTML = '🚀 Quick Buy $0.5';
-    button.style.cssText = `
+// Function to create buttons container
+function createButtons(contractAddress) {
+    const container = document.createElement('div');
+    container.style.cssText = `
+        display: flex;
+        gap: 8px;
+        margin: 12px 0;
+    `;
+
+    // Quick Buy Button
+    const buyButton = document.createElement('button');
+    buyButton.className = 'quick-buy-btn';
+    buyButton.innerHTML = '🚀 Quick Buy $0.5';
+    buyButton.style.cssText = `
         background-color: rgb(29, 155, 240);
         color: rgb(255, 255, 255);
         border: none;
         border-radius: 9999px;
         padding: 6px 16px;
-        margin: 12px 0;
         cursor: pointer;
         font-size: 15px;
         font-weight: 500;
         font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
         transition: background-color 0.2s;
-        display: block;
-        width: fit-content;
     `;
     
-    button.onmouseover = () => button.style.backgroundColor = 'rgb(26, 140, 216)';
-    button.onmouseout = () => button.style.backgroundColor = 'rgb(29, 155, 240)';
+    // View on BullX Button
+    const viewButton = document.createElement('button');
+    viewButton.className = 'view-bullx-btn';
+    viewButton.innerHTML = '👀 View on BullX';
+    viewButton.style.cssText = buyButton.style.cssText;
+    viewButton.style.backgroundColor = 'rgb(83, 100, 113)';
     
-    button.onclick = async (e) => {
+    viewButton.onmouseover = () => viewButton.style.backgroundColor = 'rgb(66, 83, 96)';
+    viewButton.onmouseout = () => viewButton.style.backgroundColor = 'rgb(83, 100, 113)';
+    
+    viewButton.onclick = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        window.open(`https://neo.bullx.io/terminal?chainId=1399811149&address=${contractAddress}`, '_blank');
+    };
+
+    // Add the existing buy button functionality
+    buyButton.onmouseover = () => buyButton.style.backgroundColor = 'rgb(26, 140, 216)';
+    buyButton.onmouseout = () => buyButton.style.backgroundColor = 'rgb(29, 155, 240)';
+    
+    buyButton.onclick = async (e) => {
         e.preventDefault();
         e.stopPropagation();
         
         try {
-            const authToken = await getBullXToken();
-            const csToken = await getCSToken();
+            const tokens = await getBullXTokens();
             
-            if (!authToken || !csToken) {
-                throw new Error('Missing authentication tokens. Please make sure you are logged into BullX.');
-            }
+            // First, get the token info
+            const tokenInfoResponse = await fetch(`https://api-neo.bullx.io/secure/api/token/${contractAddress}`, {
+                headers: {
+                    'Authorization': `Bearer ${tokens.sessionToken}`,
+                    'x-cs-token': tokens.csToken
+                }
+            });
+            
+            const tokenInfo = await tokenInfoResponse.json();
+            log('Token info:', tokenInfo);
 
-            log('Using tokens:', { authToken: authToken.substring(0, 10) + '...', csToken: csToken.substring(0, 10) + '...' });
+            // Calculate amount in SOL units for $0.50
+            const priceInUSD = parseFloat(tokenInfo.priceUSD);
+            const amountInTokens = 0.50 / priceInUSD;
+            const amountInSolUnits = Math.floor(amountInTokens * Math.pow(10, 9)); // Convert to SOL units
 
             const response = await fetch('https://api-neo.bullx.io/secure/api/order', {
                 method: 'POST',
@@ -90,17 +121,18 @@ function createBuyButton(contractAddress) {
                     'Content-Type': 'text/plain',
                     'Origin': 'https://neo.bullx.io',
                     'Referer': 'https://neo.bullx.io/',
-                    'Authorization': `Bearer ${authToken}`,
-                    'x-cs-token': csToken,
-                    'Cookie': `bullx-session-token=${authToken}; bullx-cs-token=${csToken}`
+                    'Authorization': `Bearer ${tokens.sessionToken}`
                 },
-                credentials: 'include',
                 body: JSON.stringify({
                     "name": "placeOrderV3",
                     "data": {
                         "chainId": 1399811149,
                         "baseToken": {
                             "address": contractAddress,
+                            "name": tokenInfo.name,
+                            "symbol": tokenInfo.symbol,
+                            "price": tokenInfo.price,
+                            "priceUSD": tokenInfo.priceUSD,
                             "decimals": 6,
                             "protocol": "PUMP"
                         },
@@ -109,10 +141,17 @@ function createBuyButton(contractAddress) {
                             "decimals": 9
                         },
                         "orderType": "BUY_MARKET_ORDER_V1",
-                        "slippage": 30,
-                        "isMEVOnly": true,
+                        "amounts": {
+                            [tokenInfo.wallets[0]]: amountInSolUnits.toString()
+                        },
+                        "wallets": [tokenInfo.wallets[0]],
+                        "direction": null,
+                        "referrer": "",
+                        "sellStrategyId": "e18378e6-4d2d-4779-a091-41c13959d187",
                         "priorityFee": 0.0001,
                         "bribe": 0.0001,
+                        "slippage": 30,
+                        "isMEVOnly": true,
                         "burstable": false,
                         "maxBurstChunks": 40,
                         "language": "en"
@@ -125,98 +164,50 @@ function createBuyButton(contractAddress) {
                 throw new Error(`HTTP error! status: ${response.status}, message: ${errorText}`);
             }
             
-            button.innerHTML = '✅ Order placed!';
+            buyButton.innerHTML = '✅ Order placed!';
             setTimeout(() => {
-                button.innerHTML = '🚀 Quick Buy $0.5';
+                buyButton.innerHTML = '🚀 Quick Buy $0.5';
             }, 2000);
 
         } catch (error) {
             console.error('Error placing order:', error);
-            button.innerHTML = '❌ Error: ' + error.message;
+            buyButton.innerHTML = '❌ Error: ' + error.message;
             setTimeout(() => {
-                button.innerHTML = '🚀 Quick Buy $0.5';
+                buyButton.innerHTML = '🚀 Quick Buy $0.5';
             }, 3000);
         }
     };
-    
-    return button;
+
+    container.appendChild(buyButton);
+    container.appendChild(viewButton);
+    return container;
 }
 
-// Helper function to get BullX token from the open tab
-async function getBullXToken() {
-    try {
-        // Get all tabs
-        const tabs = await chrome.tabs.query({url: "https://neo.bullx.io/*"});
-        
-        if (tabs.length === 0) {
-            throw new Error('Please open BullX in another tab first');
-        }
-        
-        // Execute script in the BullX tab to get the token
-        const result = await chrome.scripting.executeScript({
-            target: { tabId: tabs[0].id },
-            func: () => {
-                // Get token from localStorage
-                const token = localStorage.getItem('bullx-token');
-                // Get bearer token from the page
-                const bearerToken = document.querySelector('meta[name="bearer-token"]')?.content;
-                return { token, bearerToken };
+// Helper function to get both tokens at once
+async function getBullXTokens() {
+    return new Promise((resolve, reject) => {
+        chrome.runtime.sendMessage({ type: 'GET_BULLX_TOKENS' }, (response) => {
+            if (chrome.runtime.lastError) {
+                reject(new Error(chrome.runtime.lastError.message));
+                return;
             }
-        });
-        
-        log('Token result:', result);
-        
-        if (!result?.[0]?.result?.token) {
-            throw new Error('Could not get auth token. Please log into BullX');
-        }
-        
-        return result[0].result.token;
-    } catch (error) {
-        log('Error getting BullX token:', error);
-        throw error;
-    }
-}
+            
+            if (response.error) {
+                reject(new Error(response.error));
+                return;
+            }
 
-// Helper function to get CS token
-async function getCSToken() {
-    try {
-        // Get all tabs
-        const tabs = await chrome.tabs.query({url: "https://neo.bullx.io/*"});
-        
-        if (tabs.length === 0) {
-            throw new Error('Please open BullX in another tab first');
-        }
-        
-        // Execute script in the BullX tab to get the token
-        const result = await chrome.scripting.executeScript({
-            target: { tabId: tabs[0].id },
-            func: () => {
-                // Try to get from cookie
-                const csToken = document.cookie
-                    .split('; ')
-                    .find(row => row.startsWith('bullx-cs-token='))
-                    ?.split('=')[1];
-                    
-                // Also try to get from meta tag
-                const metaToken = document.querySelector('meta[name="cs-token"]')?.content;
-                
-                return { csToken, metaToken };
+            if (!response.sessionToken || !response.csToken) {
+                reject(new Error('Missing tokens. Please make sure you are logged into BullX'));
+                return;
             }
+
+            resolve({
+                sessionToken: response.sessionToken,
+                csToken: response.csToken
+            });
         });
-        
-        log('CS Token result:', result);
-        
-        const token = result?.[0]?.result?.csToken || result?.[0]?.result?.metaToken;
-        
-        if (!token) {
-            throw new Error('Could not get CS token. Please log into BullX');
-        }
-        
-        return token;
-    } catch (error) {
-        log('Error getting CS token:', error);
-        throw error;
-    }
+    });
 }
 
 // Function to process a tweet
@@ -265,22 +256,22 @@ function processTweet(element) {
         }
     }
 
-    // If we found a contract address, add the button
+    // If we found a contract address, add the buttons
     if (contractAddress) {
-        log('Adding button for contract:', contractAddress);
-        const button = createBuyButton(contractAddress);
+        log('Adding buttons for contract:', contractAddress);
+        const buttons = createButtons(contractAddress);
         
-        // Find the best place to insert the button
+        // Find the best place to insert the buttons
         const tweetText = element.querySelector('[data-testid="tweetText"]');
         const tweetActions = element.querySelector('[role="group"]');
         
         if (tweetText) {
-            tweetText.insertAdjacentElement('afterend', button);
+            tweetText.insertAdjacentElement('afterend', buttons);
         } else if (tweetActions) {
-            tweetActions.insertAdjacentElement('beforebegin', button);
+            tweetActions.insertAdjacentElement('beforebegin', buttons);
         } else {
             // Fallback - append to the tweet
-            element.appendChild(button);
+            element.appendChild(buttons);
         }
     } else {
         log('No contract address found in tweet');
