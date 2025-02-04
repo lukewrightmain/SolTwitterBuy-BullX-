@@ -202,6 +202,9 @@ function createButtons(contractAddress) {
                 throw new Error('Failed to get technical data');
             }
 
+            // After getting technical response, let's log it to see the structure
+            console.log('Technical response:', technicalResponse);
+
             // Extract wallet addresses from technical data
             const walletAddresses = [
                 "63oeKsNhezg8D3EMKbcCsNTZFNDE2oaEu8KJcGRa5nQZ",
@@ -258,12 +261,12 @@ function createButtons(contractAddress) {
                         chainId: 1399811149,
                         baseToken: {
                             address: contractAddress,
-                            decimals: 5,
+                            decimals: technicalResponse.data.decimals || 5,
                             protocol: "RAYDIUM",
                             price: technicalResponse.data.price,
                             priceUSD: technicalResponse.data.priceUSD,
-                            name: "GIGA",
-                            symbol: "GIGA",
+                            name: technicalResponse.data.tokenInfo?.name || technicalResponse.data.name || "Kansas",
+                            symbol: technicalResponse.data.tokenInfo?.symbol || technicalResponse.data.symbol || "Kansas",
                             image: `https://image.bullx.io/1399811149/${contractAddress}`,
                             liquidityPool: technicalResponse.data.liquidityPool
                         },
@@ -296,7 +299,10 @@ function createButtons(contractAddress) {
             }
 
             // On successful order
-            buyButton.innerHTML = '✅ Success!';
+            const tokenSymbol = technicalResponse.data?.symbol || 
+                               technicalResponse.data?.baseToken?.symbol || 
+                               'token'; // Fallback to generic term if no symbol found
+            buyButton.innerHTML = `✅ Success!`;
             buyButton.className = 'bullx-btn buy-btn success';
             
             // Reset button after 3 seconds
