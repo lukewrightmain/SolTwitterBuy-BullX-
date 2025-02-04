@@ -163,7 +163,16 @@ function createButtons(contractAddress) {
         e.preventDefault();
         e.stopPropagation();
         
+        // Save original button text and style
+        const originalText = buyButton.innerHTML;
+        const originalClass = buyButton.className;
+        
         try {
+            // Update button to show processing state
+            buyButton.innerHTML = '⏳ Processing...';
+            buyButton.className = 'bullx-btn buy-btn processing';
+            buyButton.disabled = true;
+
             // Get settings first
             const settings = await new Promise((resolve) => {
                 chrome.storage.local.get({
@@ -286,10 +295,30 @@ function createButtons(contractAddress) {
                 throw new Error(orderResponse.data?.message || 'Failed to place order');
             }
 
-            alert('Order placed successfully!');
+            // On successful order
+            buyButton.innerHTML = '✅ Success!';
+            buyButton.className = 'bullx-btn buy-btn success';
             
+            // Reset button after 3 seconds
+            setTimeout(() => {
+                buyButton.innerHTML = originalText;
+                buyButton.className = originalClass;
+                buyButton.disabled = false;
+            }, 3000);
+
         } catch (error) {
+            // Show error state
+            buyButton.innerHTML = '❌ Failed';
+            buyButton.className = 'bullx-btn buy-btn error';
             console.error('Error placing order:', error);
+            
+            // Reset button after 3 seconds
+            setTimeout(() => {
+                buyButton.innerHTML = originalText;
+                buyButton.className = originalClass;
+                buyButton.disabled = false;
+            }, 3000);
+            
             alert('Error placing order: ' + error.message);
         }
     };
@@ -462,4 +491,33 @@ window.addEventListener('popstate', () => {
     if (isEnabled) {
         setTimeout(scanForTweets, 500);
     }
-}); 
+});
+
+// Add these styles to your existing button styles
+const additionalStyles = `
+    .bullx-btn.processing {
+        background: linear-gradient(135deg, #ffd700 0%, #ffa500 100%);
+        cursor: not-allowed;
+        opacity: 0.8;
+    }
+
+    .bullx-btn.success {
+        background: linear-gradient(135deg, #4CAF50 0%, #45a049 100%);
+        cursor: default;
+    }
+
+    .bullx-btn.error {
+        background: linear-gradient(135deg, #f44336 0%, #d32f2f 100%);
+        cursor: default;
+    }
+
+    .bullx-btn:disabled {
+        cursor: not-allowed;
+        opacity: 0.8;
+    }
+`;
+
+// Add the styles to the existing styleSheet
+const styleSheet = document.createElement('style');
+styleSheet.textContent = buttonStyles + additionalStyles;
+document.head.appendChild(styleSheet); 
