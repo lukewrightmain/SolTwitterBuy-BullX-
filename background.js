@@ -80,23 +80,19 @@ async function getBullXTokensFromTab(tab) {
     }
 }
 
-// Add this to your existing background.js
+// Update makeProxiedRequest function
 async function makeProxiedRequest(url, options) {
     try {
-        // Get fresh tokens before making request
         const tokens = await getBullXTokensFromTab(await findBullXTab());
         if (!tokens) {
             throw new Error('Failed to get required tokens');
         }
 
-        console.log('Making proxied request to:', url);
-        
-        // Match exact headers from working cURL request
         const headers = {
             'accept': 'application/json, text/plain, */*',
             'accept-language': 'en-US,en;q=0.6',
-            'authorization': options.headers?.Authorization,
-            'content-type': 'text/plain',
+            'authorization': `Bearer ${tokens.bullxToken}`,
+            'content-type': options.contentType || 'text/plain',  // Default to text/plain
             'cookie': `bullx-token=${tokens.bullxToken}; bullx-nonce-id=${tokens.bullxNonceId}; bullx-visitor-id=${tokens.bullxVisitorId}; bullx-cs-token=${tokens.bullxCsToken}; bullx-session-token=${tokens.bullxSessionToken}`,
             'origin': 'https://neo.bullx.io',
             'priority': 'u=1, i',
@@ -118,38 +114,18 @@ async function makeProxiedRequest(url, options) {
             credentials: 'include'
         };
 
-        // For POST requests, ensure body matches exactly
         if (options.method === 'POST' && options.body) {
-            requestOptions.body = JSON.stringify({
-                name: "placeOrderV3",
-                data: {
-                    chainId: 1399811149,
-                    baseToken: options.body.data.baseToken,
-                    quoteToken: options.body.data.quoteToken,
-                    orderType: "BUY_MARKET_ORDER_V1",
-                    amounts: options.body.data.amounts,
-                    wallets: options.body.data.wallets,
-                    slippage: 30,
-                    isMEVOnly: true,
-                    priorityFee: 0.0001,
-                    bribe: 0.0001,
-                    burstable: false,
-                    maxBurstChunks: 40,
-                    language: "en"
-                }
-            });
+            requestOptions.body = typeof options.body === 'string' 
+                ? options.body 
+                : JSON.stringify(options.body);
         }
 
-        console.log('Request options:', {
-            url,
-            method: requestOptions.method,
-            headers: requestOptions.headers,
-            body: requestOptions.body
-        });
+        console.log('Making request to:', url);
+        console.log('Request options:', requestOptions);
 
         const response = await fetch(url, requestOptions);
         console.log('Response status:', response.status);
-        
+
         const responseText = await response.text();
         console.log('Response:', responseText);
 

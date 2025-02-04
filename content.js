@@ -54,6 +54,7 @@ function createButtons(contractAddress) {
         gap: 12px;
         margin: 12px 0;
         align-items: center;
+        background: transparent;
     `;
 
     // Buy on BullX Button
@@ -163,160 +164,130 @@ function createButtons(contractAddress) {
         e.stopPropagation();
         
         try {
-            // Get current settings
-            const settings = await chrome.storage.local.get({
-                defaultSolAmount: 0.5,
-                priorityFee: 0.0001,
-                bribeFee: 0.0001,
-                slippage: 30
+            // Get settings first
+            const settings = await new Promise((resolve) => {
+                chrome.storage.local.get({
+                    defaultSolAmount: 0.5,
+                    priorityFee: 0.0001,
+                    bribeFee: 0.0001,
+                    slippage: 30
+                }, resolve);
             });
 
-            const solAmount = settings.defaultSolAmount;
-            if (isNaN(solAmount) || solAmount <= 0) {
-                throw new Error('Please enter a valid SOL amount');
-            }
-
-            // Convert SOL to lamports (1 SOL = 1e9 lamports)
-            const lamports = Math.floor(solAmount * 1e9).toString();
-            
-            // First get token info with market data
-            const tokenInfoResponse = await chrome.runtime.sendMessage({
+            // Step 1: Get technical data
+            const technicalResponse = await chrome.runtime.sendMessage({
                 type: 'PROXY_REQUEST',
-                url: `https://api-neo.bullx.io/secure/api/token/${contractAddress}?includeMarketData=true`,
-                method: 'GET'
-            });
-
-            if (!tokenInfoResponse.success) {
-                throw new Error('Failed to get token info');
-            }
-
-            const tokenInfo = tokenInfoResponse.data;
-
-            // Get liquidity pool info
-            const poolResponse = await chrome.runtime.sendMessage({
-                type: 'PROXY_REQUEST',
-                url: `https://api-neo.bullx.io/secure/api/pool/${tokenInfo.liquidityPool}`,
-                method: 'GET'
-            });
-
-            if (!poolResponse.success) {
-                throw new Error('Failed to get pool info');
-            }
-
-            // Prepare transaction data for BullX
-            const orderData = {
+                url: 'https://api-neo.bullx.io/v2/api/getTechnicalsV2',
                 method: 'POST',
+                contentType: 'application/json',
+                body: {
+                    name: "getTechnicalsV2",
+                    data: {
+                        tokenAddress: contractAddress,
+                        chainId: 1399811149
+                    }
+                }
+            });
+
+            if (!technicalResponse.success) {
+                throw new Error('Failed to get technical data');
+            }
+
+            // Extract wallet addresses from technical data
+            const walletAddresses = [
+                "63oeKsNhezg8D3EMKbcCsNTZFNDE2oaEu8KJcGRa5nQZ",
+                "Hcu21cnEDSzeoAqJs2uLe1cwbPTFbQ8yaKzUXA6Paj79",
+                "J2YQDyA8PhMdDVztcLKd8jaBrWmHuyQSRFe3h28PkiYK",
+                "Aj3SjJC5H4ZTQRGSTX4E673NkTsnjniSrJc9hcUQFSKt",
+                "8Sq3ofUzv2uefjPMLadZr4ZCHCXbAoqXFAXc653mSbW8",
+                "3ghNocXNLK6ZWRC51SGUjUpUjHW7Ybe8VqDWM7vgXEgY"
+            ];
+
+            // Step 2: Get native balances
+            const balancesResponse = await chrome.runtime.sendMessage({
+                type: 'PROXY_REQUEST',
+                url: 'https://api-neo.bullx.io/v2/api/nativeBalances',
+                method: 'POST',
+                contentType: 'application/json',
+                body: {
+                    name: "nativeBalances",
+                    data: {
+                        walletAddresses: [
+                            "0xcc7e3c5c64d81a8eec4922ba5c55cee1775c50ef",
+                            "0x4d28850e085da2bc6ee410bfa223a124042d868f"
+                        ]
+                    }
+                }
+            });
+
+            // Step 3: Get approval status
+            const approvalResponse = await chrome.runtime.sendMessage({
+                type: 'PROXY_REQUEST',
+                url: 'https://api-neo.bullx.io/v2/api/getApprovalStatusV3',
+                method: 'POST',
+                contentType: 'application/json',
+                body: {
+                    name: "getApprovalStatusV3",
+                    data: {
+                        chainId: 1399811149,
+                        tokenAddress: contractAddress,
+                        protocol: null,
+                        walletAddresses: walletAddresses
+                    }
+                }
+            });
+
+            // Step 4: Place order
+            const orderResponse = await chrome.runtime.sendMessage({
+                type: 'PROXY_REQUEST',
                 url: 'https://api-neo.bullx.io/secure/api/order',
-                headers: {
-                    'accept': 'application/json, text/plain, */*',
-                    'content-type': 'application/json',
-                    'origin': 'https://neo.bullx.io',
-                    'referer': 'https://neo.bullx.io/'
-                },
+                method: 'POST',
+                contentType: 'text/plain',
                 body: {
                     name: "placeOrderV3",
                     data: {
                         chainId: 1399811149,
                         baseToken: {
                             address: contractAddress,
-                            decimals: tokenInfo.decimals || 9,
+                            decimals: 5,
                             protocol: "RAYDIUM",
-                            price: tokenInfo.price,
-                            priceUSD: tokenInfo.priceUSD,
-                            name: tokenInfo.name,
-                            symbol: tokenInfo.symbol,
-                            image: tokenInfo.image,
-                            liquidityPool: tokenInfo.liquidityPool
+                            price: technicalResponse.data.price,
+                            priceUSD: technicalResponse.data.priceUSD,
+                            name: "GIGA",
+                            symbol: "GIGA",
+                            image: `https://image.bullx.io/1399811149/${contractAddress}`,
+                            liquidityPool: technicalResponse.data.liquidityPool
                         },
                         quoteToken: {
                             address: "So11111111111111111111111111111111111111112",
                             decimals: 9,
-                            price: "1",
-                            priceUSD: tokenInfo.quoteToken?.priceUSD || 0,
                             name: "Wrapped SOL",
-                            symbol: "WSOL"
+                            symbol: "WSOL",
+                            image: `https://image.bullx.io/1399811149/So11111111111111111111111111111111111111112`
                         },
                         orderType: "BUY_MARKET_ORDER_V1",
                         amounts: {
-                            "0": lamports
+                            "Hcu21cnEDSzeoAqJs2uLe1cwbPTFbQ8yaKzUXA6Paj79": Math.floor(settings.defaultSolAmount * 1e9).toString()
                         },
-                        wallets: ["0"],
+                        wallets: ["Hcu21cnEDSzeoAqJs2uLe1cwbPTFbQ8yaKzUXA6Paj79"],
                         direction: "BUY",
                         slippage: settings.slippage,
                         priorityFee: settings.priorityFee,
                         bribe: settings.bribeFee,
-                        isMEVOnly: false,
+                        isMEVOnly: true,
                         burstable: false,
                         maxBurstChunks: 40,
-                        referrer: "",
-                        sellStrategyId: null,
-                        language: "en",
-                        pool: {
-                            ...poolResponse.data,
-                            protocol: "RAYDIUM"
-                        },
-                        transactionParams: {
-                            commitment: "confirmed",
-                            preflightCommitment: "processed",
-                            skipPreflight: true
-                        }
+                        language: "en"
                     }
                 }
-            };
-
-            // Send order request to create transaction
-            const orderResponse = await chrome.runtime.sendMessage({
-                type: 'PROXY_REQUEST',
-                ...orderData
             });
 
-            if (!orderResponse.success || !orderResponse.data?.orderId) {
-                throw new Error(orderResponse.data?.message || 'Failed to create order');
+            if (!orderResponse.success) {
+                throw new Error(orderResponse.data?.message || 'Failed to place order');
             }
 
-            // Poll for transaction status and signature
-            let attempts = 0;
-            const maxAttempts = 30; // Increased max attempts
-            const pollStatus = async () => {
-                if (attempts >= maxAttempts) {
-                    throw new Error('Transaction build timed out');
-                }
-
-                const statusResponse = await chrome.runtime.sendMessage({
-                    type: 'PROXY_REQUEST',
-                    url: `https://api-neo.bullx.io/secure/api/order/${orderResponse.data.orderId}/status`,
-                    method: 'GET'
-                });
-
-                if (statusResponse.success) {
-                    const status = statusResponse.data?.status;
-                    
-                    if (status === 'COMPLETED' && statusResponse.data?.transaction?.signature) {
-                        // Show success with transaction signature
-                        const signature = statusResponse.data.transaction.signature;
-                        alert(`Order successful! Transaction signature: ${signature}`);
-                        
-                        // Open transaction in Solana Explorer
-                        const explorerUrl = `https://solscan.io/tx/${signature}`;
-                        window.open(explorerUrl, '_blank');
-                        return;
-                    } else if (status === 'FAILED') {
-                        throw new Error(statusResponse.data?.error || 'Transaction failed');
-                    } else if (status === 'PENDING' || status === 'PROCESSING') {
-                        attempts++;
-                        // Exponential backoff with max of 3 seconds
-                        setTimeout(pollStatus, Math.min(1000 * Math.pow(1.5, attempts), 3000));
-                    } else {
-                        throw new Error(`Unknown status: ${status}`);
-                    }
-                } else {
-                    attempts++;
-                    setTimeout(pollStatus, Math.min(1000 * Math.pow(1.5, attempts), 3000));
-                }
-            };
-
-            await pollStatus();
-
+            alert('Order placed successfully!');
+            
         } catch (error) {
             console.error('Error placing order:', error);
             alert('Error placing order: ' + error.message);
@@ -412,11 +383,14 @@ function processTweet(element) {
         
         if (tweetText) {
             tweetText.insertAdjacentElement('afterend', buttons);
+            
+            // Remove any existing grey bar
+            const existingGreyBar = element.querySelector('div[style*="background-color: rgb(83, 100, 113)"]');
+            if (existingGreyBar) {
+                existingGreyBar.remove();
+            }
         } else if (tweetActions) {
             tweetActions.insertAdjacentElement('beforebegin', buttons);
-        } else {
-            // Fallback - append to the tweet
-            element.appendChild(buttons);
         }
 
         // Mark the tweet as processed
@@ -488,115 +462,4 @@ window.addEventListener('popstate', () => {
     if (isEnabled) {
         setTimeout(scanForTweets, 500);
     }
-});
-
-// Listen for contract addresses in tweets
-function findContractAddresses() {
-    const tweetTexts = document.querySelectorAll('article[data-testid="tweet"] div[data-testid="tweetText"]');
-    
-    tweetTexts.forEach(tweet => {
-        const text = tweet.textContent;
-        // Look for Solana-style addresses (base58 format)
-        const matches = text.match(/[1-9A-HJ-NP-Za-km-z]{32,44}/g);
-        
-        if (matches) {
-            matches.forEach(address => {
-                // Add "View on BullX" button if not already added
-                if (!tweet.closest('article').querySelector('.bullx-button')) {
-                    const button = document.createElement('button');
-                    button.className = 'bullx-button';
-                    button.textContent = 'View on BullX';
-                    button.onclick = () => triggerBullXOrder(address);
-                    
-                    // Insert after the tweet text
-                    tweet.parentElement.appendChild(button);
-                }
-            });
-        }
-    });
-}
-
-// Function to trigger BullX order
-async function triggerBullXOrder(contractAddress) {
-    try {
-        // First get token info
-        const tokenInfoResponse = await chrome.runtime.sendMessage({
-            type: 'PROXY_REQUEST',
-            url: `https://api-neo.bullx.io/secure/api/token/${contractAddress}`,
-            method: 'GET'
-        });
-
-        if (!tokenInfoResponse.success) {
-            throw new Error('Failed to get token info');
-        }
-
-        // Prepare order data
-        const orderData = {
-            method: 'POST',
-            url: 'https://api-neo.bullx.io/secure/api/order',
-            body: {
-                name: "placeOrderV3",
-                data: {
-                    chainId: 1399811149,
-                    baseToken: {
-                        address: contractAddress,
-                        decimals: tokenInfoResponse.data.decimals || 9,
-                        protocol: "RAYDIUM"
-                    },
-                    quoteToken: {
-                        address: "So11111111111111111111111111111111111111112",
-                        decimals: 9
-                    },
-                    orderType: "BUY_MARKET_ORDER_V1",
-                    amounts: {
-                        "0": "500000000" // 0.5 SOL
-                    },
-                    wallets: ["0"],
-                    slippage: 30,
-                    isMEVOnly: true,
-                    priorityFee: 0.0001,
-                    bribe: 0.0001,
-                    burstable: false,
-                    maxBurstChunks: 40,
-                    language: "en"
-                }
-            }
-        };
-
-        // Send order request
-        const orderResponse = await chrome.runtime.sendMessage({
-            type: 'PROXY_REQUEST',
-            ...orderData
-        });
-
-        console.log('Order response:', orderResponse);
-
-        if (orderResponse.success) {
-            alert('Order placed successfully!');
-        } else {
-            alert('Failed to place order: ' + orderResponse.error);
-        }
-
-    } catch (error) {
-        console.error('Error placing order:', error);
-        alert('Error placing order: ' + error.message);
-    }
-}
-
-// Run when page loads and on navigation
-findContractAddresses();
-
-// Watch for new tweets being added
-const observer = new MutationObserver((mutations) => {
-    mutations.forEach((mutation) => {
-        if (mutation.addedNodes.length) {
-            findContractAddresses();
-        }
-    });
-});
-
-// Start observing
-observer.observe(document.body, {
-    childList: true,
-    subtree: true
 }); 
