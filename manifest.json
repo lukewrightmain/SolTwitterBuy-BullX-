@@ -17,6 +17,10 @@
     "https://twitter.com/*",
     "https://*.twitter.com/*",
     "https://x.com/*",
+    "https://pro.x.com/*",
+    "https://pro.x.com/i/*",
+    "https://pro.x.com/i/decks/*",
+    "https://*.twimg.com/*",
     "*://*.bullx.io/*",
     "https://neo.bullx.io/*",
     "https://api-neo.bullx.io/*",
@@ -33,10 +37,14 @@
       "matches": [
         "https://twitter.com/*",
         "https://*.twitter.com/*",
-        "https://x.com/*"
+        "https://x.com/*",
+        "https://pro.x.com/*",
+        "https://pro.x.com/i/*",
+        "https://pro.x.com/i/decks/*"
       ],
       "js": ["content.js"],
-      "run_at": "document_end"
+      "run_at": "document_start",
+      "all_frames": true
     },
     {
       "matches": ["*://*.bullx.io/*"],
@@ -44,6 +52,10 @@
     }
   ],
   "content_security_policy": {
-    "extension_pages": "script-src 'self'; object-src 'self'; connect-src 'self' https://api-neo.bullx.io/"
-  }
+    "extension_pages": "script-src 'self'; object-src 'self'; connect-src 'self' https://api-neo.bullx.io/ https://*.twimg.com/"
+  },
+  "web_accessible_resources": [{
+    "resources": ["content.js"],
+    "matches": ["https://pro.x.com/*"]
+  }]
 } 

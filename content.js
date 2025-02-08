@@ -1,3 +1,7 @@
+// First line of the file
+console.log('🔵 SCRIPT LOAD CHECK - URL:', window.location.href);
+console.log('🔵 SCRIPT LOAD CHECK - HOSTNAME:', window.location.hostname);
+
 // Immediate logging when script loads
 console.log('🌟 Solana Quick Buy Extension Loading...');
 window.addEventListener('load', () => {
@@ -8,6 +12,14 @@ window.addEventListener('load', () => {
 const DEBUG = true;
 function log(...args) {
     console.log('🚀 [Solana Quick Buy]:', ...args);  // Removed DEBUG check to ensure logging
+}
+
+// Add near the top of file, after existing logging setup
+const DEBUG_PRO = true;
+function logPro(...args) {
+    if (DEBUG_PRO) {
+        console.log('🔷 [Pro.X.com Debug]:', ...args);
+    }
 }
 
 // Log that we're starting
@@ -43,18 +55,25 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     }
 });
 
-// Regular expression to match Solana contract addresses
-const solanaAddressRegex = /(?:\/spot\/)?([1-9A-HJ-NP-Za-km-z]{32,44})/;
+// Match both prefixed and raw Solana addresses
+const solanaAddressRegex = /(?:(?:CA:|contract:|address:)\s*)?([1-9A-HJ-NP-Za-km-z]{32,44})\b/i;
 
 // Function to create buttons container
 function createButtons(contractAddress) {
     const container = document.createElement('div');
+    const isPro = window.location.href.includes('pro.x.com');
+    
     container.style.cssText = `
         display: flex;
-        gap: 12px;
+        gap: ${isPro ? '8px' : '12px'};
         margin: 12px 0;
         align-items: center;
         background: transparent;
+        ${isPro ? `
+            width: 100%;
+            justify-content: space-between;
+            flex-wrap: wrap;
+        ` : ''}
     `;
 
     // Buy on BullX Button
@@ -73,22 +92,29 @@ function createButtons(contractAddress) {
     viewButton.className = 'bullx-btn view-btn';
     viewButton.innerHTML = '👀 View on BullX';
 
-    // Shared button styles
+    // Now define buttonStyles here
     const buttonStyles = `
         .bullx-btn {
             background: linear-gradient(135deg, #1da1f2 0%, #1a91da 100%);
             color: white;
             border: none;
             border-radius: 9999px;
-            padding: 8px 16px;
+            padding: ${isPro ? '6px 12px' : '8px 16px'};
             cursor: pointer;
-            font-size: 14px;
+            font-size: ${isPro ? '13px' : '14px'};
             font-weight: 600;
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
             transition: all 0.3s ease;
             box-shadow: 0 2px 5px rgba(29, 161, 242, 0.2);
             position: relative;
             overflow: hidden;
+            ${isPro ? `
+                flex: 1;
+                min-width: calc(50% - 4px);
+                max-width: 150px;
+                white-space: nowrap;
+                text-overflow: ellipsis;
+            ` : ''}
         }
 
         .bullx-btn:before {
@@ -141,6 +167,15 @@ function createButtons(contractAddress) {
             background: linear-gradient(135deg, #4a148c 0%, #311b92 100%);
             box-shadow: 0 4px 10px rgba(98, 0, 234, 0.3);
         }
+
+        ${isPro ? `
+            @media (max-width: 480px) {
+                .bullx-btn {
+                    font-size: 12px;
+                    padding: 5px 10px;
+                }
+            }
+        ` : ''}
     `;
 
     // Add styles to document
@@ -400,8 +435,13 @@ function processTweet(element) {
             const text = tweetText.textContent;
             log('Processing tweet text:', text);
             const matches = text.match(solanaAddressRegex);
+            logPro('Text being checked:', text);
+            logPro('Regex used:', solanaAddressRegex);
+            logPro('Regex matches:', matches);
             if (matches) {
-                contractAddress = matches[0];
+                logPro('Full match:', matches[0]);
+                logPro('Captured address:', matches[1] || matches[0]);
+                contractAddress = matches[1] || matches[0];
                 log('Found contract address in text:', contractAddress);
             }
         }
@@ -523,7 +563,203 @@ const additionalStyles = `
     }
 `;
 
-// Add the styles to the existing styleSheet
-const styleSheet = document.createElement('style');
-styleSheet.textContent = buttonStyles + additionalStyles;
-document.head.appendChild(styleSheet); 
+// Function to handle pro.x.com tweets
+function processProTweet(element) {
+    logPro('=== Processing Pro Tweet ===');
+    
+    if (!isEnabled) {
+        logPro('Skipping - extension disabled');
+        return;
+    }
+
+    if (element.getAttribute('data-bullx-processed') === 'true') {
+        logPro('Skipping - already processed');
+        return;
+    }
+
+    // Try multiple selectors for tweet text
+    const tweetText = element.querySelector([
+        '[data-testid="tweetText"]',
+        '.css-146c3p1[dir="auto"][lang]',
+        'div[lang="en"]',
+        'div[dir="auto"]'
+    ].join(','));
+
+    logPro('Tweet text element found:', !!tweetText);
+    
+    if (tweetText) {
+        const text = tweetText.textContent;
+        logPro('Tweet text content:', text);
+        
+        // Look for contract address
+        const matches = text.match(solanaAddressRegex);
+        logPro('Text being checked:', text);
+        logPro('Regex used:', solanaAddressRegex);
+        logPro('Regex matches:', matches);
+        if (matches) {
+            logPro('Full match:', matches[0]);
+            logPro('Captured address:', matches[1] || matches[0]);
+            const contractAddress = matches[1] || matches[0]; // Get capture group if exists
+            logPro('Found contract address:', contractAddress);
+            
+            // Create and add buttons
+            const buttons = createButtons(contractAddress);
+            
+            // Try to find the best insertion point
+            const insertionPoint = element.querySelector([
+                '[role="group"]',  // Try tweet actions first
+                '[data-testid="tweetText"]', // Then tweet text
+                'div[lang="en"]'  // Finally any text container
+            ].join(','));
+            
+            if (insertionPoint) {
+                logPro('Found insertion point, adding buttons');
+                insertionPoint.insertAdjacentElement('afterend', buttons);
+                element.setAttribute('data-bullx-processed', 'true');
+                logPro('✅ Successfully processed pro tweet');
+            } else {
+                logPro('❌ No suitable insertion point found');
+            }
+        }
+    }
+}
+
+// Function to scan pro.x.com columns
+function scanProColumns() {
+    console.log('🔄 Checking if should scan pro columns:', {
+        isEnabled,
+        hostname: window.location.hostname,
+        shouldScan: isEnabled && window.location.hostname === 'pro.x.com'
+    });
+
+    logPro('=== Starting Pro Column Scan ===');
+    logPro('Current URL:', window.location.href);
+    logPro('Extension state:', isEnabled);
+    logPro('Document readyState:', document.readyState);
+
+    if (!isEnabled || window.location.hostname !== 'pro.x.com') {
+        logPro('Scan skipped - Extension disabled or wrong hostname');
+        return;
+    }
+
+    logPro('Looking for main content...');
+    const mainContent = document.querySelector('[role="main"]');
+    logPro('Main content found:', !!mainContent);
+
+    const proTweets = document.querySelectorAll('[data-testid="cellInnerDiv"]:not([data-bullx-processed="true"])');
+    console.log('📱 Found pro tweets:', proTweets.length);
+    logPro('Tweet elements:', Array.from(proTweets).map(el => ({
+        html: el.innerHTML.substring(0, 100) + '...',
+        hasText: !!el.querySelector('[data-testid="tweetText"]'),
+        processed: el.getAttribute('data-bullx-processed')
+    })));
+
+    proTweets.forEach((tweet, index) => {
+        console.log(`🔄 Processing pro tweet ${index + 1}/${proTweets.length}`);
+        processProTweet(tweet);
+    });
+}
+
+// Modify the hostname check
+function isProXDomain() {
+    const hostname = window.location.hostname;
+    const href = window.location.href;
+    console.log('🔵 Checking domain:', { hostname, href });
+    return hostname.includes('prox.com') || href.includes('prox.com');
+}
+
+// Update the initialization check
+if (window.location.href.includes('pro.x.com')) {
+    console.log('🔵 Pro X detected, starting initialization');
+    // Start initialization after a short delay
+    setTimeout(initializeProX, 500);
+
+    // Also set up a periodic check
+    setInterval(scanProColumns, 5000);
+}
+
+// Add at the top of the file
+const RETRY_INTERVAL = 1000; // 1 second
+const MAX_RETRIES = 30; // 30 seconds max
+let retryCount = 0;
+
+function initializeProX() {
+    console.log('🔵 Attempting to initialize Pro X...', window.location.href);
+    
+    const mainContent = document.querySelector('[role="main"]');
+    if (!mainContent && retryCount < MAX_RETRIES) {
+        console.log('🔵 Main content not found, retrying...', retryCount);
+        retryCount++;
+        setTimeout(initializeProX, RETRY_INTERVAL);
+        return;
+    }
+    
+    if (mainContent) {
+        console.log('🔵 Main content found, setting up observer');
+        const proObserver = new MutationObserver(() => {
+            console.log('🔵 Mutation detected');
+            scanProColumns();
+        });
+        
+        proObserver.observe(mainContent, {
+            childList: true,
+            subtree: true
+        });
+        
+        // Initial scan
+        scanProColumns();
+    }
+}
+
+function findTweetElements() {
+  // Look for both old and new selectors
+  const tweetContainers = document.querySelectorAll([
+    '[data-testid="cellInnerDiv"]',
+    '[data-testid="tweet"]',
+    'article[role="article"]'
+  ].join(','));
+
+  tweetContainers.forEach(container => {
+    // Skip if already processed
+    if (container.getAttribute('data-bullx-processed')) return;
+
+    // Find tweet text using multiple possible selectors
+    const tweetText = container.querySelector([
+      '[data-testid="tweetText"]',
+      '.css-146c3p1[dir="auto"][lang]', // New pro.x.com selector
+      '[data-testid="tweet"] div[lang]'
+    ].join(','));
+
+    if (tweetText) {
+      processTweet(container, tweetText);
+    }
+
+    // Mark as processed
+    container.setAttribute('data-bullx-processed', 'true');
+  });
+}
+
+// Modify the observer to watch for both immediate and nested changes
+const observer = new MutationObserver((mutations) => {
+  mutations.forEach(mutation => {
+    if (mutation.type === 'childList') {
+      // Check both added nodes and their descendants
+      mutation.addedNodes.forEach(node => {
+        if (node.nodeType === 1) { // Element node
+          findTweetElements();
+          // Also check children after a short delay to handle dynamic loading
+          setTimeout(findTweetElements, 500);
+        }
+      });
+    }
+  });
+});
+
+// Observe with subtree option to catch nested changes
+observer.observe(document.body, {
+  childList: true,
+  subtree: true
+});
+
+// Add near the top of the file, after the existing logging setup
+console.log('🌟 Domain:', window.location.hostname); 
